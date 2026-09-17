@@ -13,6 +13,8 @@ from agentqa.llm.adapter import LLMResult
 
 DEFAULT_BASE_URL = "https://opencode.ai/zen/v1"
 DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_API = "chat"
+API_MODES = ("chat", "responses")
 
 
 class LLMFormatError(RuntimeError):
@@ -54,8 +56,11 @@ def _extract_json(text: str) -> dict:
 
 
 class OpenAICompatAdapter:
-    def __init__(self, *, base_url: str, api_key: str, model: str):
+    def __init__(self, *, base_url: str, api_key: str, model: str, api: str = DEFAULT_API):
+        if api not in API_MODES:
+            raise ValueError(f"unsupported api mode: {api!r} (expected one of {API_MODES})")
         self.model = model
+        self.api = api
         self._client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
@@ -77,9 +82,22 @@ class OpenAICompatAdapter:
             base_url=base_url,
             api_key=api_key or "not-needed",
             model=os.environ.get("AGENTQA_LLM_MODEL", DEFAULT_MODEL),
+            api=os.environ.get("AGENTQA_LLM_API", DEFAULT_API),
         )
 
-    async def decide(self, system: str, user: str) -> LLMResult:
+    def _to_result(self, content: str, input_tokens: int, output_tokens: int) -> LLMResult:
+        payload = _extract_json(content)
+        try:
+            decision = ActionDecision.model_validate(payload)
+        except Exception as exc:
+            raise LLMFormatError(f"invalid action payload: {payload!r}") from exc
+        return LLMResult(
+            action=_to_action(decision),
+            input_tokens=input_tokens or 0,
+            output_tokens=output_tokens or 0,
+        )
+
+    async def _decide_chat(self, system: str, user: str) -> LLMResult:
         response = await self._client.chat.completions.create(
             model=self.model,
             messages=[
@@ -88,14 +106,27 @@ class OpenAICompatAdapter:
             ],
         )
         content = response.choices[0].message.content or ""
-        payload = _extract_json(content)
-        try:
-            decision = ActionDecision.model_validate(payload)
-        except Exception as exc:
-            raise LLMFormatError(f"invalid action payload: {payload!r}") from exc
         usage = response.usage
-        return LLMResult(
-            action=_to_action(decision),
-            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        return self._to_result(
+            content,
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
         )
+
+    async def _decide_responses(self, system: str, user: str) -> LLMResult:
+        response = await self._client.responses.create(
+            model=self.model,
+            instructions=system,
+            input=user,
+        )
+        usage = response.usage
+        return self._to_result(
+            response.output_text or "",
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+        )
+
+    async def decide(self, system: str, user: str) -> LLMResult:
+        if self.api == "responses":
+            return await self._decide_responses(system, user)
+        return await self._decide_chat(system, user)

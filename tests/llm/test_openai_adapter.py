@@ -122,3 +122,46 @@ def test_adapter_session_id_is_unique_per_instance(monkeypatch):
     OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1")
     OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1")
     assert sessions[0] != sessions[1]
+
+
+class _StubResponses:
+    def __init__(self, output_text: str):
+        self.output_text = output_text
+        self.last_kwargs = None
+
+    async def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        return SimpleNamespace(
+            output_text=self.output_text,
+            usage=SimpleNamespace(input_tokens=13, output_tokens=9),
+        )
+
+
+def _build_responses_adapter(content: str):
+    adapter = OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1", api="responses")
+    stub = _StubResponses(content)
+    adapter._client = SimpleNamespace(responses=stub)
+    return adapter, stub
+
+
+async def test_decide_responses_parses_output_text_and_usage():
+    adapter, stub = _build_responses_adapter('{"type": "finish"}')
+    result = await adapter.decide("sys", "usr")
+    assert result.action.type == "finish"
+    assert result.input_tokens == 13
+    assert result.output_tokens == 9
+    assert stub.last_kwargs["model"] == "m1"
+    assert stub.last_kwargs["instructions"] == "sys"
+    assert stub.last_kwargs["input"] == "usr"
+
+
+def test_from_env_reads_responses_api(monkeypatch):
+    monkeypatch.setenv("AGENTQA_LLM_API_KEY", "k")
+    monkeypatch.setenv("AGENTQA_LLM_API", "responses")
+    adapter = OpenAICompatAdapter.from_env()
+    assert adapter.api == "responses"
+
+
+def test_adapter_rejects_unknown_api_mode():
+    with pytest.raises(ValueError):
+        OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1", api="bogus")
