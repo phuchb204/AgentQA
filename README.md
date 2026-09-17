@@ -18,7 +18,7 @@ uv run --env-file .env agentqa run --case experiments/cases/login_todo.yaml --ba
 
 ## Bắt đầu
 
-Xem `docs/runbooks/dev-setup.md` để setup môi trường, chạy test và chạy 1 case thật.
+Xem `docs/runbooks/dev-setup.md` để setup môi trường, chạy test và chạy 1 case thật; quy trình làm việc nhóm: `docs/runbooks/team-workflow.md`.
 
 ## Trạng thái
 
