@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+experiments/runs/
+apps/demo-site/variants/*
+!apps/demo-site/variants/.gitkeep
+node_modules/
+playwright-report/
+.superpowers/
