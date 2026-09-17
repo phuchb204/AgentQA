@@ -1,0 +1,12 @@
+/src/agentqa/contracts/  @phuchb204 @daungocnghia @ZDS2004
+/src/agentqa/llm/        @phuchb204
+/src/agentqa/agent/      @phuchb204
+/src/agentqa/verify/     @daungocnghia
+/src/agentqa/platform/   @ZDS2004
+/src/agentqa/api/        @ZDS2004
+/apps/demo-site/         @daungocnghia
+/experiments/rq1/        @phuchb204
+/experiments/rq2/        @daungocnghia
+/experiments/rq3/        @ZDS2004
+/.github/                @ZDS2004
+/infra/                  @ZDS2004
