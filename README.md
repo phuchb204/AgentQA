@@ -13,7 +13,7 @@ uv run pytest
 Run a single case:
 
 ```bash
-uv run agentqa run --case experiments/cases/login_todo.yaml --base-url <url>
+uv run --env-file .env agentqa run --case experiments/cases/login_todo.yaml --base-url <url>
 ```
 
 ## Bắt đầu
