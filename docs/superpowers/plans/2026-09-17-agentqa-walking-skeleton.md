@@ -22,6 +22,7 @@
 - Action semantics: `navigate` → `target` là URL; `click` → `target` là selector Playwright; `fill` → `target` selector + `value` nội dung; `finish` kết thúc loop.
 - Ngôn ngữ: code/commit/test name/comment-free — tiếng Anh; UI demo-site + goal kịch bản — tiếng Việt.
 - Commit theo Conventional Commits, prefix `feat|fix|chore|docs|test` + scope (ví dụ `feat(contracts): ...`).
+- **Lint gate:** mọi file phải pass `uv run ruff check .`. Khi snippet trong plan xung đột với ruff (ví dụ thiếu blank line sau import block), **sửa theo ruff** thay vì giữ verbatim — CI xanh quan trọng hơn copy chính xác khoảng trắng.
 
 ## Ownership map (ai làm task nào)
 
@@ -61,6 +62,10 @@ dependencies = [
 
 [project.scripts]
 agentqa = "agentqa.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
@@ -218,6 +223,7 @@ Expected: có `origin`, 2 commit gần nhất là bootstrap + CODEOWNERS.
 `tests/contracts/test_core.py`:
 ```python
 from agentqa.contracts import Action, ObservationSnapshot, StepResult
+
 
 def test_observation_snapshot_roundtrip():
     snap = ObservationSnapshot(
@@ -1405,8 +1411,8 @@ git commit -m "feat(verify): add assertion checker for text visibility and url"
 - Test: `tests/agent/test_loop.py`
 
 **Interfaces:**
-- Consumes: `observe` (Task 7), `execute`/`ActionExecutionError` (Task 8), `check_all` (Task 9), `LLMAdapter`/`LLMResult` (Task 5), contracts (Task 3–4).
-- Produces: `run_case(case, llm, *, base_url, headless=True) -> RunTrace`; `PROMPT_VERSION = "v1"`; `SYSTEM_PROMPT`; `build_user_prompt(goal, snapshot, history) -> str`.
+- Consumes: `observe` (Task 7), `execute`/`ActionExecutionError` (Task 8), `LLMAdapter`/`LLMResult` (Task 5), contracts (Task 3–4). Checker được **wire từ ngoài** qua tham số `checker` (DI) — vì import-linter cấm `agent` import `verify`; CLI (Task 12) và test truyền `check_all`.
+- Produces: `run_case(case, llm, *, base_url, headless=True, checker) -> RunTrace`; `Checker` type alias; `PROMPT_VERSION = "v1"`; `SYSTEM_PROMPT`; `build_user_prompt(goal, snapshot, history) -> str`.
 
 - [ ] **Step 1: Viết test thất bại**
 
@@ -1417,6 +1423,7 @@ from pathlib import Path
 from agentqa.agent.loop import run_case
 from agentqa.contracts import Action, TestCase, load_case
 from agentqa.llm.fake import FakeLLM
+from agentqa.verify.checker import check_all
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1438,7 +1445,7 @@ def _login_case() -> TestCase:
 
 async def test_run_case_passes_end_to_end(demo_server):
     llm = FakeLLM(_login_script())
-    trace = await run_case(_login_case(), llm, base_url=demo_server)
+    trace = await run_case(_login_case(), llm, base_url=demo_server, checker=check_all)
     assert trace.status == "passed"
     assert trace.case_name == "login_todo"
     assert len(trace.steps) == 5
@@ -1456,7 +1463,7 @@ async def test_run_case_fails_when_assertion_not_met(demo_server):
         update={"assertions": [case_assertion("Sản phẩm đã giao")]}
     )
     llm = FakeLLM(_login_script())
-    trace = await run_case(case, llm, base_url=demo_server)
+    trace = await run_case(case, llm, base_url=demo_server, checker=check_all)
     assert trace.status == "failed"
     assert trace.assertions[0].status == "failed"
 
@@ -1464,7 +1471,7 @@ async def test_run_case_fails_when_assertion_not_met(demo_server):
 async def test_run_case_marks_failed_step_but_continues(demo_server):
     script = [Action(type="click", target="#khong-ton-tai")] + _login_script()
     llm = FakeLLM(script)
-    trace = await run_case(_login_case(), llm, base_url=demo_server)
+    trace = await run_case(_login_case(), llm, base_url=demo_server, checker=check_all)
     assert trace.steps[0].ok is False
     assert trace.steps[0].error is not None
     assert trace.status == "failed"
@@ -1528,14 +1535,16 @@ def build_user_prompt(goal: str, snapshot: ObservationSnapshot, history: list[st
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Awaitable, Callable
 
-from playwright.async_api import async_playwright
+from playwright.async_api import Page, async_playwright
 
 from agentqa.agent.executor import ActionExecutionError, execute
 from agentqa.agent.observation import observe
 from agentqa.agent.prompts import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from agentqa.contracts import (
     AssertionResult,
+    AssertionSpec,
     RunMetrics,
     RunTrace,
     RunVersions,
@@ -1543,7 +1552,8 @@ from agentqa.contracts import (
     TestCase,
 )
 from agentqa.llm.adapter import LLMAdapter
-from agentqa.verify.checker import check_all
+
+Checker = Callable[[Page, list[AssertionSpec]], Awaitable[list[AssertionResult]]]
 
 APP_VERSION = "0.1.0"
 
@@ -1553,7 +1563,12 @@ def _now() -> str:
 
 
 async def run_case(
-    case: TestCase, llm: LLMAdapter, *, base_url: str, headless: bool = True
+    case: TestCase,
+    llm: LLMAdapter,
+    *,
+    base_url: str,
+    headless: bool = True,
+    checker: Checker,
 ) -> RunTrace:
     run_id = f"{case.name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
     started_at = _now()
@@ -1604,14 +1619,14 @@ async def run_case(
                 )
                 outcome = "ok" if step_error is None else f"error: {step_error}"
                 history.append(f"bước {index + 1}: {result.action.type} {result.action.target or ''} -> {outcome}")
-            assertions = await check_all(page, case.assertions)
+            assertions = await checker(page, case.assertions)
             passed = (
                 finished
                 and all(a.status == "passed" for a in assertions)
                 and all(s.ok for s in steps)
             )
             status = "passed" if passed else "failed"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             status = "error"
             error = str(exc)
         finally:
@@ -1832,6 +1847,7 @@ from agentqa.agent.loop import run_case
 from agentqa.contracts import load_case
 from agentqa.llm.adapter import LLMAdapter
 from agentqa.platform.trace_store import write_trace
+from agentqa.verify.checker import check_all
 
 
 def build_llm() -> LLMAdapter:
@@ -1854,7 +1870,9 @@ def main(argv: list[str] | None = None) -> int:
 
     case = load_case(Path(args.case))
     llm = build_llm()
-    trace = asyncio.run(run_case(case, llm, base_url=args.base_url, headless=not args.headed))
+    trace = asyncio.run(
+        run_case(case, llm, base_url=args.base_url, headless=not args.headed, checker=check_all)
+    )
     path = write_trace(trace, Path(args.out))
     print(f"{trace.status.upper()} {trace.case_name} -> {path}")
     return 0 if trace.status == "passed" else 1
@@ -2048,4 +2066,4 @@ Sau khi merge và DoD xanh: `git checkout main; git pull; git tag v0.1-skeleton;
 
 - **Spec coverage:** phạm vi skeleton (mục 2.6 + cột W1–2 bảng milestone) → Task 1–14; contracts v1 → Task 3–4; CI/branch protection/import rules → Task 1, 2, 13; demo-site + variants → Task 6; trace JSON → Task 10–11; runbook/AGENTS/weekly → Task 14. Các mục W3+ (harness, mutation generator, UI, Postgres wiring) nằm ngoài plan này theo thiết kế.
 - **Placeholder scan:** không có TBD/TODO; mọi bước code đều có code thật.
-- **Type consistency:** `LLMResult`, `ActionDecision`, `_to_action`, `run_case(case, llm, *, base_url, headless)`, `observe`, `execute`, `check_all`, `write_trace`, `load_case` được dùng thống nhất xuyên task; token kỳ vọng trong test loop (6×10/5) khớp giá trị mặc định của `FakeLLM`.
+- **Type consistency:** `LLMResult`, `ActionDecision`, `_to_action`, `run_case(case, llm, *, base_url, headless, checker)`, `observe`, `execute`, `check_all`, `write_trace`, `load_case` được dùng thống nhất xuyên task; token kỳ vọng trong test loop (6×10/5) khớp giá trị mặc định của `FakeLLM`. **Ghi chú DI:** `run_case` nhận `checker` từ ngoài (CLI/test truyền `check_all`) vì import-linter cấm `agent` import `verify` — sửa lại so với bản đầu của plan sau khi phát hiện vi phạm luật import.

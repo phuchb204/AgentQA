@@ -1,0 +1,66 @@
+# Runbook — Setup môi trường dev
+
+## 1. Cài công cụ
+
+- **uv** (quản lý Python + môi trường):
+  - Windows: `winget install astral-sh.uv`
+  - macOS/Linux: xem hướng dẫn tại https://docs.astral.sh/uv/
+- **Docker Desktop** (tuỳ chọn — chỉ cần khi dùng Postgres/W3 trở đi)
+- Git + `gh` CLI (tuỳ chọn, để làm PR)
+
+## 2. Cài repo
+
+```bash
+git clone https://github.com/phuchb204/agentqa.git
+cd agentqa
+uv sync
+uv run playwright install chromium
+```
+
+## 3. Cấu hình `.env`
+
+```bash
+cp .env.example .env
+```
+Mở `.env`, điền `AGENTQA_LLM_API_KEY` (Zen: lấy key tại https://opencode.ai/auth).
+Các provider khác (DeepSeek trực tiếp / OpenRouter / Gemini-compat / Ollama) — xem comment sẵn trong `.env.example`, đổi `AGENTQA_LLM_BASE_URL` + `AGENTQA_LLM_MODEL` là xong.
+
+## 4. Chạy test (không cần key)
+
+```bash
+uv run pytest -q
+```
+
+## 5. Chạy 1 case thật (cần key trong `.env`)
+
+Terminal 1 — serve demo-site:
+```bash
+uv run python -m http.server 8000 --directory apps/demo-site/base
+```
+Terminal 2 — chạy case:
+```bash
+uv run --env-file .env agentqa run --case experiments/cases/login_todo.yaml --base-url http://127.0.0.1:8000
+```
+Thêm `--headed` nếu muốn nhìn trình duyệt chạy.
+
+## 6. Đọc kết quả
+
+Mỗi lần chạy tạo `experiments/runs/<run_id>/trace.json`:
+- `status`: passed / failed / error
+- `steps[]`: từng hành động + lỗi + token
+- `assertions[]`: kết quả từng assertion
+- `metrics`: tổng llm_calls / input_tokens / output_tokens / duration_s
+- `versions`: app / model / prompt version (dùng để tái lập thí nghiệm)
+
+## 7. Sinh UI variant (phục vụ mutation testing — W2)
+
+```bash
+uv run python apps/demo-site/tools/gen_variants.py apps/demo-site/variant-specs/id-change.json
+```
+Kết quả ở `apps/demo-site/variants/<name>/` (không commit — đã gitignore).
+
+## 8. Postgres (W3 trở đi)
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
