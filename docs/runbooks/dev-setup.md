@@ -22,7 +22,8 @@ uv run playwright install chromium
 ```bash
 cp .env.example .env
 ```
-Mở `.env`, điền `AGENTQA_LLM_API_KEY` (Zen: lấy key tại https://opencode.ai/auth).
+Mở `.env`, điền `AGENTQA_LLM_API_KEY` (Zen/Go: lấy key tại https://opencode.ai/auth).
+**OpenCode Go** (subscription): `AGENTQA_LLM_BASE_URL=https://opencode.ai/zen/go/v1`, `AGENTQA_LLM_MODEL=deepseek-v4.1-flash` — dùng chung key với Zen; adapter tự gửi header `x-opencode-session` theo yêu cầu của Go.
 Các provider khác (DeepSeek trực tiếp / OpenRouter / Gemini-compat / Ollama) — xem comment sẵn trong `.env.example`, đổi `AGENTQA_LLM_BASE_URL` + `AGENTQA_LLM_MODEL` là xong.
 
 ## 4. Chạy test (không cần key)

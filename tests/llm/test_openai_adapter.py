@@ -93,3 +93,32 @@ def test_from_env_allows_missing_key_for_localhost(monkeypatch):
     monkeypatch.setenv("AGENTQA_LLM_BASE_URL", "http://localhost:11434/v1")
     adapter = OpenAICompatAdapter.from_env()
     assert adapter.model == DEFAULT_MODEL
+
+
+def test_adapter_sets_go_compliance_headers(monkeypatch):
+    captured = {}
+
+    def fake_async_openai(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentqa.llm.openai_adapter.AsyncOpenAI", fake_async_openai)
+    OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1")
+    headers = captured["default_headers"]
+    assert headers["User-Agent"].startswith("agentqa/")
+    session = headers["x-opencode-session"]
+    assert len(session) == 32
+    assert all(c in "0123456789abcdef" for c in session)
+
+
+def test_adapter_session_id_is_unique_per_instance(monkeypatch):
+    sessions = []
+
+    def fake_async_openai(**kwargs):
+        sessions.append(kwargs["default_headers"]["x-opencode-session"])
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentqa.llm.openai_adapter.AsyncOpenAI", fake_async_openai)
+    OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1")
+    OpenAICompatAdapter(base_url="http://stub", api_key="k", model="m1")
+    assert sessions[0] != sessions[1]

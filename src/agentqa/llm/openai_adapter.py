@@ -1,11 +1,13 @@
 import json
 import os
 import re
+import uuid
 from typing import Literal
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+from agentqa import __version__
 from agentqa.contracts import Action
 from agentqa.llm.adapter import LLMResult
 
@@ -54,7 +56,14 @@ def _extract_json(text: str) -> dict:
 class OpenAICompatAdapter:
     def __init__(self, *, base_url: str, api_key: str, model: str):
         self.model = model
-        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self._client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            default_headers={
+                "User-Agent": f"agentqa/{__version__}",
+                "x-opencode-session": uuid.uuid4().hex,
+            },
+        )
 
     @classmethod
     def from_env(cls) -> "OpenAICompatAdapter":
