@@ -26,5 +26,6 @@ Trước khi code: đọc `README.md`, plan gần nhất trong `docs/superpowers
 - Branch: `feat/<w1|w2|w3|shared>-<mô tả>`, `fix/...`, `chore/...`; sống ngắn, rebase `main` hằng ngày
 - Commit: Conventional Commits — `feat(scope): ...` với scope ∈ {contracts, llm, agent, verify, platform, cli, demo-site, ci, docs}
 - PR: 1 mục đích/PR, mô tả what/why/cách tự verify; không merge code mình không hiểu; code AI sinh phải kèm test
+- `main`: **không push thẳng** — mọi thay đổi qua PR và CI phải xanh (branch protection chưa bật được vì repo private trên GitHub Free; nhóm giữ quy ước thủ công)
 - Không comment trong code; tên định danh tiếng Anh; chuỗi UI/prompt tiếng Việt theo thiết kế
 - Chạy CLI thật cần `.env` — xem `docs/runbooks/dev-setup.md`
