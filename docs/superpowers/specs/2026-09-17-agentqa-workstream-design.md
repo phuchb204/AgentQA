@@ -53,7 +53,7 @@ Monorepo, một package Python duy nhất + web tách riêng:
 AgentQA/
 ├─ src/agentqa/
 │  ├─ contracts/   # Pydantic models chung — không phụ thuộc module nào
-│  ├─ llm/         # adapter Claude/GPT + đếm token — lá, dùng chung
+│  ├─ llm/         # adapter OpenAI-compatible (DeepSeek/Zen/Gemini/OpenRouter/Ollama) + đếm token — lá, dùng chung
 │  ├─ agent/       # W1: observation, policy, budget, executor
 │  ├─ verify/      # W2: assertion, healing, mutation generator
 │  ├─ platform/    # W3: orchestrator, queue, workers, metrics, experiment runner
